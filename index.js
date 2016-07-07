@@ -4,6 +4,8 @@ const tabs = require("sdk/tabs");
 const child_process = require("sdk/system/child_process");
 const prefs = require("sdk/simple-prefs");
 const notifications = require("sdk/notifications");
+var { setTimeout } = require("sdk/timers");
+
 
 const {Cu} = require("chrome");
 const {Downloads} = Cu.import("resource://gre/modules/Downloads.jsm");
@@ -34,7 +36,28 @@ function download(downloadsArray, callback) {
     Promise.all(downloadsArray.map(Task.async(function*(value, index, array) {
         let finalDest = yield getValidFilename(downloadFolder, value.filename, 0);
         console.log(`Downloading ${value.downloadPath} to ${finalDest}.`);
-        yield Downloads.fetch(value.downloadPath, finalDest);
+        if (!callback) {
+            // its likely a single download, so lets show it in download manager, otherwise i wont know when its done
+    		var list = yield Downloads.getList(Downloads.ALL);
+    		var download = yield Downloads.createDownload({
+    			source: aSourceURL,
+    			target: aTargetOSPath
+    		});
+    		list.add(download);
+    		try {
+    			download.start();
+    		} finally {
+    		    var timeout_resolve;
+                var timeout = new Promise(function(resolve, reject) {
+                		timeout_resolve = resolve;
+                });
+    			setTimeout(timeout_resolve, 1000); // if the download finishes really fast, and .finalize(true) is called, then it wont show the completion in the download manager so i do settimeout
+    			yield timeout;
+    			download.finalize(true);
+    		}
+        } else {
+            yield Downloads.fetch(value.downloadPath, finalDest);
+        }
         console.log(`${finalDest} has been downloaded`);
         return finalDest;
     }))).then(function(files) {
